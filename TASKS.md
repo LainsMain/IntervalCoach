@@ -15,6 +15,6 @@ Physical phone checks still needed for audible cues, audio ducking with another 
 - [x] Add GitHub latest-release check and version comparison.
 - [x] Download and verify release APK, then open Android's install flow.
 - [x] Add focused update UI and test parsing/version decisions.
-- [ ] Build and sign the v1 release APK; verify it installs.
-- [ ] Initialize Git, publish public GitHub repository, tag v1.0.0, upload APK.
-- [ ] Validate published release endpoint and in-app check.
+- [x] Build and sign the v1 release APK; verify it installs.
+- [x] Initialize Git, publish public GitHub repository, tag v1.0.0, upload APK.
+- [x] Validate published release endpoint and in-app check.
