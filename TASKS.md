@@ -24,4 +24,4 @@ Physical phone checks still needed for audible cues, audio ducking with another 
 - [x] Migrate saved workouts to support repeat groups and expand them for playback.
 - [x] Add loop editing and direct drag reordering for blocks and loop steps.
 - [x] Test loop ordering, repetition, migration, and playback transitions.
-- [ ] Review the editor on an emulator, build a signed v1.1 APK, and publish the update.
+- [x] Review the editor on an emulator, build a signed v1.1 APK, and publish the update.
