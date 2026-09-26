@@ -11,9 +11,10 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.*
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,7 +27,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -68,11 +75,14 @@ class CoachViewModel(private val app: CoachApp) : ViewModel() {
     fun create() = viewModelScope.launch { selectedId.value = app.repository.create("New workout") }
     fun rename(id: Long, name: String) = viewModelScope.launch { app.repository.rename(id, name) }
     fun delete(id: Long) = viewModelScope.launch { app.repository.delete(id); selectedId.value = null }
-    fun add(id: Long, activity: String, seconds: Int, instruction: String) = viewModelScope.launch { app.repository.add(id, activity, seconds, instruction) }
+    fun add(id: Long, activity: String, seconds: Int, instruction: String, loopId: Long? = null) = viewModelScope.launch { app.repository.add(id, activity, seconds, instruction, loopId) }
+    fun addLoop(id: Long) = viewModelScope.launch { app.repository.addLoop(id) }
+    fun wrapPair(first: IntervalEntity, second: IntervalEntity) = viewModelScope.launch { app.repository.wrapPair(first, second) }
+    fun setRepeats(item: IntervalEntity, repeats: Int) = viewModelScope.launch { app.repository.setRepeats(item, repeats) }
     fun edit(item: IntervalEntity, activity: String, seconds: Int, instruction: String) = viewModelScope.launch { app.repository.edit(item, activity, seconds, instruction) }
     fun duplicate(item: IntervalEntity) = viewModelScope.launch { app.repository.duplicate(item) }
     fun remove(item: IntervalEntity) = viewModelScope.launch { app.repository.remove(item) }
-    fun move(id: Long, from: Int, to: Int) = viewModelScope.launch { app.repository.move(id, from, to) }
+    fun move(id: Long, from: Int, to: Int, loopId: Long? = null) = viewModelScope.launch { app.repository.move(id, from, to, loopId) }
 }
 
 @Composable private fun CoachTheme(content: @Composable () -> Unit) {
@@ -141,9 +151,9 @@ class CoachViewModel(private val app: CoachApp) : ViewModel() {
                     Row(Modifier.fillMaxWidth().clickable { onOpen(w.workout.id) }.padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(w.workout.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Medium)
-                            Text("${formatTime(w.totalSeconds * 1000L)} · ${w.intervals.size} intervals", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${formatTime(w.totalSeconds * 1000L)} · ${w.intervalCount} intervals", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        IconButton(onClick = { onStart(w.workout.id) }, enabled = w.intervals.isNotEmpty(), modifier = Modifier.size(56.dp).semantics { contentDescription = "Start ${w.workout.name}" }) { Icon(Icons.Default.PlayArrow, null) }
+                        IconButton(onClick = { onStart(w.workout.id) }, enabled = w.intervalCount > 0, modifier = Modifier.size(56.dp).semantics { contentDescription = "Start ${w.workout.name}" }) { Icon(Icons.Default.PlayArrow, null) }
                     }
                 }
             }
@@ -155,15 +165,19 @@ class CoachViewModel(private val app: CoachApp) : ViewModel() {
 @Composable private fun EditorScreen(w: WorkoutWithIntervals, vm: CoachViewModel, onBack: () -> Unit, onStart: () -> Unit) {
     var sheetItem by remember { mutableStateOf<IntervalEntity?>(null) }
     var sheetOpen by remember { mutableStateOf(false) }
+    var sheetLoopId by remember { mutableStateOf<Long?>(null) }
+    var loopDialogItem by remember { mutableStateOf<IntervalEntity?>(null) }
     var nameDialog by remember { mutableStateOf(false) }
     var deleteDialog by remember { mutableStateOf(false) }
-    var menuId by remember { mutableStateOf<Long?>(null) }
+    val density = LocalDensity.current
+    val blocks = w.blocks.associateBy { it.id }
+    val reorder = rememberReorderState(w.workout.id, w.blocks.map { it.id }, with(density) { 88.dp.toPx() }) { from, to -> vm.move(w.workout.id, from, to) }
     Scaffold(topBar = { TopAppBar(title = { Text("Edit workout") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } }, actions = {
         IconButton(onClick = { deleteDialog = true }) { Icon(Icons.Default.DeleteOutline, "Delete workout") }
     }) }, bottomBar = {
         Surface(tonalElevation = 3.dp) { Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(formatTime(w.totalSeconds * 1000L), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-            Button(onClick = onStart, enabled = w.intervals.isNotEmpty(), modifier = Modifier.height(56.dp), shape = RoundedCornerShape(20.dp)) { Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Start") }
+            Button(onClick = onStart, enabled = w.intervalCount > 0, modifier = Modifier.height(56.dp), shape = RoundedCornerShape(20.dp)) { Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Start") }
         } }
     }) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -172,48 +186,142 @@ class CoachViewModel(private val app: CoachApp) : ViewModel() {
                     Text(w.workout.name, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                     Icon(Icons.Default.Edit, "Rename workout", modifier = Modifier.size(20.dp))
                 }
-                Text("${w.intervals.size} ${if (w.intervals.size == 1) "interval" else "intervals"}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("${w.intervalCount} ${if (w.intervalCount == 1) "interval" else "intervals"} · ${w.blocks.size} ${if (w.blocks.size == 1) "block" else "blocks"}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(10.dp))
             }
-            itemsIndexed(w.intervals, key = { _, item -> item.id }) { index, item ->
-                var drag by remember { mutableFloatStateOf(0f) }
-                Row(Modifier.fillMaxWidth().animateItem().background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(24.dp))
-                    .clickable { sheetItem = item; sheetOpen = true }.padding(start = 18.dp, top = 9.dp, bottom = 9.dp, end = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("${index + 1}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.width(28.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(item.activity.uppercase(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text(formatTime(item.durationSeconds * 1000L) + item.instruction.takeIf(String::isNotBlank)?.let { " · $it" }.orEmpty(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Box {
-                        IconButton(onClick = { menuId = item.id }) { Icon(Icons.Default.MoreVert, "Interval actions") }
-                        DropdownMenu(expanded = menuId == item.id, onDismissRequest = { menuId = null }) {
-                            DropdownMenuItem(text = { Text("Duplicate") }, onClick = { vm.duplicate(item); menuId = null })
-                            DropdownMenuItem(text = { Text("Delete") }, onClick = { vm.remove(item); menuId = null })
-                            if (index > 0) DropdownMenuItem(text = { Text("Move up") }, onClick = { vm.move(w.workout.id, index, index - 1); menuId = null })
-                            if (index < w.intervals.lastIndex) DropdownMenuItem(text = { Text("Move down") }, onClick = { vm.move(w.workout.id, index, index + 1); menuId = null })
-                        }
-                    }
-                    Box(Modifier.size(48.dp).pointerInput(item.id, index) {
-                        detectDragGesturesAfterLongPress(onDragEnd = { drag = 0f }, onDragCancel = { drag = 0f }) { change, amount ->
-                            change.consume(); drag += amount.y
-                            if (drag > 64 && index < w.intervals.lastIndex) { vm.move(w.workout.id, index, index + 1); drag = 0f }
-                            else if (drag < -64 && index > 0) { vm.move(w.workout.id, index, index - 1); drag = 0f }
-                        }
-                    }, contentAlignment = Alignment.Center) { Icon(Icons.Default.DragHandle, "Hold and drag to reorder") }
+            items(reorder.order.toList(), key = { it }) { id ->
+                val block = blocks[id] ?: return@items
+                Box(Modifier.fillMaxWidth().animateItem().onSizeChanged { reorder.height(id, it.height) }
+                    .zIndex(if (reorder.draggingId == id) 1f else 0f)
+                    .graphicsLayer { translationY = if (reorder.draggingId == id) reorder.offsetPx else 0f }) {
+                    if (block.isLoop) LoopEditorBlock(w, block, vm, reorder,
+                        onEditRepeats = { loopDialogItem = block },
+                        onAddChild = { sheetItem = null; sheetLoopId = block.id; sheetOpen = true },
+                        onEditChild = { sheetItem = it; sheetLoopId = block.id; sheetOpen = true })
+                    else IntervalEditorRow(block, reorder, vm, inLoop = false,
+                        onWrapPair = w.blocks.getOrNull(w.blocks.indexOfFirst { it.id == block.id } + 1)?.takeUnless { it.isLoop }?.let { next -> { vm.wrapPair(block, next) } },
+                        onEdit = {
+                        sheetItem = block; sheetLoopId = null; sheetOpen = true
+                    })
                 }
             }
-            item { OutlinedButton(onClick = { sheetItem = null; sheetOpen = true }, modifier = Modifier.fillMaxWidth().height(56.dp)) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(8.dp)); Text("Add interval") } }
+            item {
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { sheetItem = null; sheetLoopId = null; sheetOpen = true }, modifier = Modifier.weight(1f).height(56.dp)) {
+                        Icon(Icons.Default.Add, null); Spacer(Modifier.width(4.dp)); Text("Interval")
+                    }
+                    FilledTonalButton(onClick = { vm.addLoop(w.workout.id) }, modifier = Modifier.weight(1f).height(56.dp)) {
+                        Icon(Icons.Default.Repeat, null); Spacer(Modifier.width(4.dp)); Text("Loop")
+                    }
+                }
+            }
         }
     }
     if (sheetOpen) IntervalSheet(sheetItem, onDismiss = { sheetOpen = false }, onSave = { activity, seconds, instruction ->
-        if (sheetItem == null) vm.add(w.workout.id, activity, seconds, instruction) else vm.edit(sheetItem!!, activity, seconds, instruction)
+        if (sheetItem == null) vm.add(w.workout.id, activity, seconds, instruction, sheetLoopId) else vm.edit(sheetItem!!, activity, seconds, instruction)
         sheetOpen = false
     })
+    loopDialogItem?.let { loop -> LoopCountSheet(loop, onDismiss = { loopDialogItem = null }, onSave = { vm.setRepeats(loop, it); loopDialogItem = null }) }
     if (nameDialog) {
         var name by remember(w.workout.id) { mutableStateOf(w.workout.name) }
         AlertDialog(onDismissRequest = { nameDialog = false }, title = { Text("Workout name") }, text = { OutlinedTextField(name, { name = it }, singleLine = true, label = { Text("Name") }) }, confirmButton = { TextButton(onClick = { vm.rename(w.workout.id, name); nameDialog = false }) { Text("Save") } }, dismissButton = { TextButton(onClick = { nameDialog = false }) { Text("Cancel") } })
     }
     if (deleteDialog) AlertDialog(onDismissRequest = { deleteDialog = false }, title = { Text("Delete workout?") }, text = { Text("This will remove ${w.workout.name} and its intervals.") }, confirmButton = { TextButton(onClick = { vm.delete(w.workout.id); deleteDialog = false }) { Text("Delete") } }, dismissButton = { TextButton(onClick = { deleteDialog = false }) { Text("Cancel") } })
+}
+
+@Composable private fun LoopEditorBlock(w: WorkoutWithIntervals, loop: IntervalEntity, vm: CoachViewModel, outerReorder: ReorderState,
+    onEditRepeats: () -> Unit, onAddChild: () -> Unit, onEditChild: (IntervalEntity) -> Unit) {
+    val children = w.children(loop.id).associateBy { it.id }
+    val density = LocalDensity.current
+    val childReorder = rememberReorderState(loop.id, w.children(loop.id).map { it.id }, with(density) { 72.dp.toPx() }) { from, to ->
+        vm.move(w.workout.id, from, to, loop.id)
+    }
+    Surface(shape = RoundedCornerShape(30.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
+        Column(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 8.dp)) {
+            Row(Modifier.fillMaxWidth().clickable(onClick = onEditRepeats).padding(start = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Repeat, null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("REPEAT ${loop.repeatCount} TIMES", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("${formatTime(w.children(loop.id).sumOf { it.durationSeconds.toLong() } * loop.repeatCount * 1000L)} · ${w.children(loop.id).size} steps", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                BlockActions(loop, vm)
+                DragHandle(loop.id, outerReorder, "Move repeat group")
+            }
+            Spacer(Modifier.height(6.dp))
+            childReorder.order.toList().forEach { childId ->
+                val child = children[childId] ?: return@forEach
+                key(childId) {
+                    Box(Modifier.fillMaxWidth().onSizeChanged { childReorder.height(childId, it.height) }
+                        .zIndex(if (childReorder.draggingId == childId) 1f else 0f)
+                        .graphicsLayer { translationY = if (childReorder.draggingId == childId) childReorder.offsetPx else 0f }) {
+                        IntervalEditorRow(child, childReorder, vm, inLoop = true, onEdit = { onEditChild(child) })
+                    }
+                }
+            }
+            TextButton(onClick = onAddChild, modifier = Modifier.padding(start = 44.dp)) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text("Add step") }
+        }
+    }
+}
+
+@Composable private fun IntervalEditorRow(item: IntervalEntity, reorder: ReorderState, vm: CoachViewModel, inLoop: Boolean, onWrapPair: (() -> Unit)? = null, onEdit: () -> Unit) {
+    val shape = RoundedCornerShape(24.dp)
+    Row(Modifier.fillMaxWidth().then(if (inLoop) Modifier else Modifier.background(MaterialTheme.colorScheme.surfaceContainerLow, shape))
+        .clickable(onClick = onEdit).padding(start = if (inLoop) 48.dp else 18.dp, top = 9.dp, bottom = 9.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(item.activity.uppercase(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(formatTime(item.durationSeconds * 1000L) + item.instruction.takeIf(String::isNotBlank)?.let { " · $it" }.orEmpty(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        BlockActions(item, vm, onWrapPair)
+        DragHandle(item.id, reorder, "Move ${item.activity} interval")
+    }
+}
+
+@Composable private fun BlockActions(item: IntervalEntity, vm: CoachViewModel, onWrapPair: (() -> Unit)? = null) {
+    var expanded by remember(item.id) { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }) { Icon(Icons.Default.MoreVert, if (item.isLoop) "Loop actions" else "Interval actions") }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            if (onWrapPair != null) DropdownMenuItem(text = { Text("Repeat this + next") }, onClick = { onWrapPair(); expanded = false })
+            DropdownMenuItem(text = { Text("Duplicate") }, onClick = { vm.duplicate(item); expanded = false })
+            DropdownMenuItem(text = { Text("Delete") }, onClick = { vm.remove(item); expanded = false })
+        }
+    }
+}
+
+@Composable private fun DragHandle(id: Long, reorder: ReorderState, label: String) {
+    Box(Modifier.size(52.dp).pointerInput(reorder, id) {
+        detectDragGestures(onDragStart = { reorder.start(id) }, onDragEnd = reorder::end, onDragCancel = reorder::cancel) { change, amount ->
+            change.consume(); reorder.drag(amount.y)
+        }
+    }.semantics {
+        contentDescription = "$label. Drag to reorder"
+        customActions = listOf(
+            CustomAccessibilityAction("Move up") { reorder.moveDirect(id, -1) },
+            CustomAccessibilityAction("Move down") { reorder.moveDirect(id, 1) }
+        )
+    }, contentAlignment = Alignment.Center) { Icon(Icons.Default.DragHandle, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable private fun LoopCountSheet(loop: IntervalEntity, onDismiss: () -> Unit, onSave: (Int) -> Unit) {
+    var repeats by remember(loop.id) { mutableIntStateOf(loop.repeatCount) }
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
+            Text("Repeat group", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(10.dp))
+            Text("Play these steps in order, then start again.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(26.dp))
+            Text("Times", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                IconButton(onClick = { repeats-- }, enabled = repeats > 2, modifier = Modifier.size(56.dp)) { Icon(Icons.Default.Remove, "One fewer repetition") }
+                Text(repeats.toString(), style = MaterialTheme.typography.headlineLarge)
+                IconButton(onClick = { repeats++ }, enabled = repeats < 99, modifier = Modifier.size(56.dp)) { Icon(Icons.Default.Add, "One more repetition") }
+            }
+            Spacer(Modifier.height(28.dp))
+            Button(onClick = { onSave(repeats) }, modifier = Modifier.fillMaxWidth().height(56.dp)) { Text("Save loop") }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

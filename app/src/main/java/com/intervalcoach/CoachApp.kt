@@ -13,6 +13,7 @@ class CoachApp : Application() {
     val session = MutableStateFlow<SessionSnapshot?>(null)
     override fun onCreate() {
         super.onCreate()
-        repository = WorkoutRepository(Room.databaseBuilder(this, CoachDatabase::class.java, "workouts.db").build())
+        repository = WorkoutRepository(Room.databaseBuilder(this, CoachDatabase::class.java, "workouts.db")
+            .addMigrations(CoachDatabase.MIGRATION_1_2).build())
     }
 }

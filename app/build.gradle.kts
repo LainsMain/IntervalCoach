@@ -8,7 +8,7 @@ plugins {
 android {
     namespace = "com.intervalcoach"
     compileSdk = 37
-    defaultConfig { applicationId = "com.intervalcoach"; minSdk = 26; targetSdk = 36; versionCode = 2; versionName = "1.0.0"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
+    defaultConfig { applicationId = "com.intervalcoach"; minSdk = 26; targetSdk = 36; versionCode = 3; versionName = "1.1.0"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     buildFeatures { compose = true }
     val signingFile = file(System.getenv("INTERVAL_COACH_SIGNING_PROPERTIES")

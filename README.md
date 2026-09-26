@@ -2,6 +2,8 @@
 
 A native, offline Android interval workout coach. Build a list of timed activities, then start a spoken session with a large countdown and notification controls.
 
+In the editor, drag a block's handle to change its order. Add a **Loop** to repeat its steps, or use an interval's menu to repeat that interval and the next one. A new loop starts with one-minute Walk and Run steps repeated eight times; tap the loop heading to change the count, and tap any step to edit it. Steps within a loop can be dragged independently.
+
 ## Build and test
 
 Use JDK 17 and an installed Android SDK (API 37):
@@ -27,4 +29,4 @@ The service uses the documented `specialUse` foreground service type for user-st
 
 The app checks the public [GitHub releases page](https://github.com/LainsMain/IntervalCoach/releases) for the latest stable version. Workout data remains local and usable without a connection. When a newer APK exists, the app downloads it, checks GitHub's SHA-256 digest, confirms the package and version, and opens Android's installer. Android may ask the user to allow installs from Interval Coach first.
 
-The v1 release APK is signed with the key stored outside this repository at `~/.config/intervalcoach/release.jks`; the matching settings are in `~/.config/intervalcoach/signing.properties`. Back up both securely. Future update APKs must use the same key and a larger `versionCode`. Set `INTERVAL_COACH_SIGNING_PROPERTIES` to use a different local settings file when building a release.
+Release APKs are signed with the key stored outside this repository at `~/.config/intervalcoach/release.jks`; the matching settings are in `~/.config/intervalcoach/signing.properties`. Back up both securely. Future update APKs must use the same key and a larger `versionCode`. Set `INTERVAL_COACH_SIGNING_PROPERTIES` to use a different local settings file when building a release.

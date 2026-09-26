@@ -57,9 +57,9 @@ class WorkoutService : Service() {
             if (!startedForeground) foreground(notification(null))
             scope.launch {
                 val workout = app.repository.get(id)
-                if (workout == null || workout.intervals.isEmpty()) { stopSession(); return@launch }
+                if (workout == null || workout.expandedIntervals.isEmpty()) { stopSession(); return@launch }
                 speech.interrupt()
-                apply(engine.start(id, workout.workout.name, workout.intervals.map { SessionInterval(it.activity, it.durationSeconds, it.instruction) }), interrupt = false)
+                apply(engine.start(id, workout.workout.name, workout.expandedIntervals.map { SessionInterval(it.activity, it.durationSeconds, it.instruction) }), interrupt = false)
                 startLoop()
             }
         } else {
